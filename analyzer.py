@@ -10,10 +10,10 @@ from langchain_core.output_parsers import StrOutputParser
 
 load_dotenv()
 
-# ── LLM Setup ──────────────────────────────────────────────────────────────────
+os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY", "")
+
 llm = ChatGoogleGenerativeAI(
-    mmodel="gemini-2.0-flash",
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
+    model="gemini-2.0-flash",
     temperature=0.3
 )
 
