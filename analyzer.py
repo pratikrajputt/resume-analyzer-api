@@ -5,8 +5,8 @@ import re
 from dotenv import load_dotenv
 import PyPDF2
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 load_dotenv()
 
@@ -99,12 +99,11 @@ def analyze_resume(resume_text: str, job_description: str) -> dict:
     2. Detailed human-style feedback
     """
 
-    ats_chain      = LLMChain(llm=llm, prompt=ATS_PROMPT)
-    feedback_chain = LLMChain(llm=llm, prompt=FEEDBACK_PROMPT)
-
-    # Run both chains
-    ats_raw      = ats_chain.run(resume=resume_text, jd=job_description)
-    feedback_raw = feedback_chain.run(resume=resume_text, jd=job_description)
+    ats_chain = ats_prompt | llm | StrOutputParser()
+    feedback_chain = feedback_prompt | llm | StrOutputParser()
+    
+    ats_raw = ats_chain.invoke({"resume": resume_text, "jd": job_description})
+    feedback_raw = feedback_chain.invoke({"resume": resume_text, "jd": job_description})
 
     # Parse ATS JSON safely
     try:
