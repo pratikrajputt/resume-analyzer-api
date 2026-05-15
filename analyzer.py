@@ -5,20 +5,21 @@ import re
 from dotenv import load_dotenv
 import PyPDF2
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
 
 load_dotenv()
 
-os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY", "")
-
+# ── LLM Setup ──────────────────────────────────────────────────────────────────
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
     temperature=0.3
 )
 
 # ── PDF Extraction ──────────────────────────────────────────────────────────────
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
+    """Extract all text from a PDF given as raw bytes."""
     reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
     text = ""
     for page in reader.pages:
@@ -27,15 +28,13 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
             text += extracted + "\n"
     return text.strip()
 
-# ── Main Analyzer ────────────────────────────────────────────────────────────────
-def analyze_resume(resume_text: str, job_description: str) -> dict:
+# ── Prompts ─────────────────────────────────────────────────────────────────────
+ATS_PROMPT = PromptTemplate(
+    input_variables=["resume", "jd"],
+    template="""
+You are an expert ATS (Applicant Tracking System) and HR specialist.
 
-    # Prompt 1 — ATS Score
-    ats_prompt = PromptTemplate(
-        input_variables=["resume", "jd"],
-        template="""
-You are an expert ATS specialist.
-Analyze this resume against the job description and return ONLY valid JSON:
+Analyze this resume against the job description and return ONLY a valid JSON object with this exact structure:
 {{
   "ats_score": <integer 0-100>,
   "matched_keywords": [<list of strings>],
@@ -55,13 +54,14 @@ JOB DESCRIPTION:
 
 Return ONLY the JSON. No markdown. No explanation.
 """
-    )
+)
 
-    # Prompt 2 — Detailed Feedback
-    feedback_prompt = PromptTemplate(
-        input_variables=["resume", "jd"],
-        template="""
+FEEDBACK_PROMPT = PromptTemplate(
+    input_variables=["resume", "jd"],
+    template="""
 You are a senior technical recruiter reviewing a resume.
+
+Analyze this resume against the job description and provide structured feedback.
 
 RESUME:
 {resume}
@@ -87,18 +87,26 @@ IMPROVEMENTS:
 - [specific improvement 3]
 
 REWRITTEN SUMMARY:
-[2-3 sentence professional summary optimized for this job]
+[Write a 2-3 sentence professional summary optimized for this specific job description]
 """
-    )
+)
 
-    # ── Run Chains ────────────────────────────────────────────────────────────
-    ats_chain      = ats_prompt | llm | StrOutputParser()
-    feedback_chain = feedback_prompt | llm | StrOutputParser()
+# ── Main Analyzer ────────────────────────────────────────────────────────────────
+def analyze_resume(resume_text: str, job_description: str) -> dict:
+    """
+    Analyze resume against job description using two LLM chains:
+    1. ATS scoring + keyword matching
+    2. Detailed human-style feedback
+    """
 
-    ats_raw      = ats_chain.invoke({"resume": resume_text, "jd": job_description})
-    feedback_raw = feedback_chain.invoke({"resume": resume_text, "jd": job_description})
+    ats_chain      = LLMChain(llm=llm, prompt=ATS_PROMPT)
+    feedback_chain = LLMChain(llm=llm, prompt=FEEDBACK_PROMPT)
 
-    # ── Parse ATS JSON ────────────────────────────────────────────────────────
+    # Run both chains
+    ats_raw      = ats_chain.run(resume=resume_text, jd=job_description)
+    feedback_raw = feedback_chain.run(resume=resume_text, jd=job_description)
+
+    # Parse ATS JSON safely
     try:
         json_match = re.search(r'\{.*\}', ats_raw, re.DOTALL)
         ats_data   = json.loads(json_match.group()) if json_match else {}
