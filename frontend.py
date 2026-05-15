@@ -179,7 +179,7 @@ if analyze_clicked:
         with st.spinner("🤖 AI is analyzing your resume... This may take 15-30 seconds"):
             try:
                 response = requests.post(
-                    "http://localhost:8000/analyze",
+                    "https://resume-analyzer-api-w01h.onrender.com/analyze",
                     files={
                         "resume": (
                             resume_file.name,
